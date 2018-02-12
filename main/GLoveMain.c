@@ -42,12 +42,21 @@ i2s_config_t i2s_config = {
 	.intr_alloc_flags = ESP_INTR_FLAG_LEVEL1                                //Interrupt level 1
 };
 
+#if 0
 i2s_pin_config_t pin_config = {
 	.bck_io_num = 26,
 	.ws_io_num = 25,
   	.data_out_num = 22,
    	.data_in_num = 23
  };
+#else
+i2s_pin_config_t pin_config = {
+	.bck_io_num = 21,
+	.ws_io_num = 19,
+  	.data_out_num = 18,
+   	.data_in_num = 5
+ };
+#endif
 
 void AudioTransportTask(void* params)
 {
@@ -82,23 +91,13 @@ void AudioTransportTask(void* params)
     i2s_read_bytes(I2S_NUM, (char *)&theBuf[readBufNum++], BUFLEN, pdMS_TO_TICKS(50));
     while (true) {
 
-#if 0
-		gpio_set_level(GPIO_NUM_19, 1);
-    	i2s_write_bytes(I2S_NUM, (const char *)&theBuf[bufNum], BUFLEN, pdMS_TO_TICKS(50));
-		gpio_set_level(GPIO_NUM_19, 0);
-#else
-		gpio_set_level(GPIO_NUM_21, 1);
     	i2s_read_bytes(I2S_NUM, (char *)&theBuf[readBufNum++], BUFLEN, pdMS_TO_TICKS(50));
 		if (readBufNum >= NUMBUFS)
 			readBufNum = 0;
-		gpio_set_level(GPIO_NUM_21, 0);
 
-		gpio_set_level(GPIO_NUM_19, 1);
     	i2s_write_bytes(I2S_NUM, (const char *)&theBuf[writeBufNum++], BUFLEN, pdMS_TO_TICKS(50));
 		if (writeBufNum >= NUMBUFS)
 			writeBufNum = 0;
-		gpio_set_level(GPIO_NUM_19, 0);
-#endif
     } 
 }
 
@@ -107,11 +106,6 @@ void app_main()
 {    
 	BaseType_t retVal;
 
-
-
-
-	gpio_set_direction(GPIO_NUM_21, GPIO_MODE_OUTPUT);
-	gpio_set_direction(GPIO_NUM_19, GPIO_MODE_OUTPUT);
 
 	if ((retVal = xTaskCreatePinnedToCore(AudioTransportTask, "Audioxfer", 1024*3, NULL, 5, NULL, APP_CPU_NUM)) != pdPASS)
 	{
