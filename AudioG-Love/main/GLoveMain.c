@@ -13,15 +13,34 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/i2s.h"
+#include "driver/i2c.h"
 #include "esp_system.h"
 #include "esp_task_wdt.h"
+#include "esp_adc_cal.h"
 #include <math.h>
 #include <string.h>
 
 
+///////////////////////
+//	Pin Layout I2S
+#define I2S_BCLK		(33)
+#define I2S_WS			(26)
+#define I2S_DATA_IN 	(25)
+#define I2S_DATA_OUT	(23)
+
+///////////////////////
+//	Pin Layout ADCs
+#define ADC1_IN			(ADC1_CHANNEL_7)	// GPIO_NUM_35
+#define ADC2_IN			(ADC2_CHANNEL_0)	// GPIO_NUM_4
+
+///////////////////////
+//	Pin Layout I2C
+#define I2C0_SCL_PIN	(5)
+#define I2C0_SDA_PIN	(18)
+#define I2C0_FREQ	(100000)
+
 #define SAMPLE_RATE     (48000)
 #define I2S_NUM         (0)
-#define PI 3.14159265
 
 #define NUMBUFS 28
 #define SAMPLES_PER_BUF (64)
@@ -42,24 +61,16 @@ i2s_config_t i2s_config = {
 	.intr_alloc_flags = ESP_INTR_FLAG_LEVEL1                                //Interrupt level 1
 };
 
-#if 0
 i2s_pin_config_t pin_config = {
-	.bck_io_num = 26,
-	.ws_io_num = 25,
-  	.data_out_num = 22,
-   	.data_in_num = 23
+	.bck_io_num		= I2S_BCLK,
+	.ws_io_num		= I2S_WS,
+  	.data_out_num	= I2S_DATA_OUT,
+   	.data_in_num	= I2S_DATA_IN
  };
-#else
-i2s_pin_config_t pin_config = {
-	.bck_io_num = 21,
-	.ws_io_num = 19,
-  	.data_out_num = 18,
-   	.data_in_num = 5
- };
-#endif
 
-void AudioTransportTask(void* params)
-{
+
+
+void AudioTransportTask(void* params) {
 	uint32_t phase = 0;
 	int readBufNum = 0;
 	int writeBufNum = 0;
@@ -76,8 +87,8 @@ void AudioTransportTask(void* params)
 	float multiplier = pow(2,15) * level;
 	for (int i=0; i<NUMBUFS; i++) {
 		for (int j=0; j<SAMPLES_PER_BUF; j++) {
-			theBuf[i][j][1] = sin(freqLeft * 2 * PI * phase / SAMPLE_RATE) * multiplier;
-			theBuf[i][j][3] = sin(freqRight * 2 * PI * phase / SAMPLE_RATE) * multiplier;
+			theBuf[i][j][1] = sin(freqLeft * 2 * M_PI * phase / SAMPLE_RATE) * multiplier;
+			theBuf[i][j][3] = sin(freqRight * 2 * M_PI * phase / SAMPLE_RATE) * multiplier;
 //			printf("%d\n", theBuf[i][j][0]);
 		++phase;
 		}
@@ -101,15 +112,60 @@ void AudioTransportTask(void* params)
     } 
 }
 
+void SensorTask(void* params) {
+//    esp_err_t status;
+//   esp_adc_cal_characteristics_t characteristics;
+	int adc1Value;
+	int adc2Value;
 
-void app_main()
-{    
+
+	// init ADCs
+	adc1_config_width(ADC_WIDTH_BIT_12);
+	adc1_config_channel_atten(ADC1_IN, ADC_ATTEN_DB_11);
+	adc2_config_channel_atten(ADC1_IN, ADC_ATTEN_DB_11);
+
+
+	// init i2c
+	int i2c_master_port = I2C_NUM_0;
+	i2c_config_t conf;
+	conf.mode = I2C_MODE_MASTER;
+	conf.sda_io_num = I2C0_SDA_PIN;
+	conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
+	conf.scl_io_num = I2C0_SCL_PIN;
+	conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
+	conf.master.clk_speed = I2C0_FREQ;
+	i2c_param_config(i2c_master_port, &conf);
+	i2c_driver_install(i2c_master_port, conf.mode, 0, 0, 0);
+
+
+	while(1) {
+		adc1Value = adc1_get_raw(ADC1_IN);
+		adc2_get_raw(ADC2_IN, ADC_WIDTH_BIT_12, &adc2Value);
+		printf("ADC1 raw = %d v = %f pct = %f\n",adc1Value, adc1Value/4096.0*3.3, adc1Value/4096.0);
+		printf("ADC2 raw = %d v = %f pct = %f\n",adc2Value, adc2Value/4096.0*3.3, adc2Value/4096.0);
+		vTaskDelay(pdMS_TO_TICKS(1000));
+	}
+}
+
+#define FFTSIZE 64
+
+
+void app_main() {    
 	BaseType_t retVal;
 
-
-	if ((retVal = xTaskCreatePinnedToCore(AudioTransportTask, "Audioxfer", 1024*3, NULL, 5, NULL, APP_CPU_NUM)) != pdPASS)
+	if ((retVal = xTaskCreatePinnedToCore(AudioTransportTask, "Audioxfer", 1024*3, NULL, 10, NULL, APP_CPU_NUM)) != pdPASS)
 	{
 		printf("task create failed\n");
 	}
+
+#if 1
+	if ((retVal = xTaskCreatePinnedToCore(SensorTask, "Sensors", 1024*3, NULL, 5, NULL, APP_CPU_NUM)) != pdPASS)
+	{
+		printf("task create failed\n");
+	}
+#endif
+	
+	while(true)
+		vTaskDelay(pdMS_TO_TICKS(1000));
     
 }
